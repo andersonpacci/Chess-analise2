@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/chess.js/1.10.2/chess.min.js"></script>
+    <script src="https://unpkg.com/@chrisoakman/chessboardjs@1.0.0/dist/chessboard-1.0.0.min.js"></script>
+    <link rel="stylesheet" href="https://unpkg.com/@chrisoakman/chessboardjs@1.0.0/dist/chessboard-1.0.0.min.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/stockfish.js/10.0.2/stockfish.min.js"></script>
+    <title>Chess 3-9-27 MultiPV</title>
+    <style> body{font-family:Arial; padding:10px;} #output{max-height:400px;overflow:auto;} button{padding:10px;} </style>
+</head>
+<body>
+    <input id="fen" placeholder="Cole FEN aqui (ex: rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq e3 0 1)" style="width:100%; padding:10px; margin:10px 0;">
+    <button onclick="iniciarArvore()">Iniciar Análise 3-9-27 (depth 18)</button>
+    <div id="board" style="width:100%; max-width:400px; margin:0 auto;"></div>
+    <pre id="output">Aguardando...</pre>
+
+    <script>
+        const board = Chessboard('board');
+        const engine = new Worker('https://cdnjs.cloudflare.com/ajax/libs/stockfish.js/10.0.2/stockfish.js');
+        const chess = new Chess();
+        let arvore = {nivel1: [], nivel2: [], nivel3: []};
+        let status = 'idle';
+
+        engine.onmessage = function(event) {
+            const msg = event.data;
+            if (msg.startsWith('info depth 18')) {
+                const multipv = parseInt(msg.match(/multipv (d+)/)?.[1] || 1);
+                const score = msg.match(/score cp (-?d+)/)?.[1];
+                const pv = msg.match(/pv ([a-h1-8]{4,})/)?.[1]?.slice(0,4);
+                if (score && pv && currentLine) currentLine.pvs[multipv-1] = {pv, score};
+            } else if (msg.startsWith('bestmove')) {
+                proximoNivel();
+            }
+        };
+
+        engine.postMessage('uci');
+        engine.postMessage('setoption name MultiPV value 3');
+        engine.postMessage('isready');
+
+        let currentFEN = '';
+        let currentNivel = 1;
+        let currentLineIndex = 0;
+        let currentPvIndex = 0;
+        let currentLine = null;
+
+        function iniciarArvore() {
+            currentFEN = document.getElementById('fen').value || 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1';
+            chess.load(currentFEN);
+            board.position(currentFEN);
+            arvore = {nivel1: [], nivel2: [], nivel3: []};
+            document.getElementById('output').textContent = 'Analisando nível 1/3...';
+            analisarNivel(currentFEN, 1, []);
+        }
+
+        function analisarNivel(fen, nivel, path) {
+            currentFEN = fen;
+            currentNivel = nivel;
+            currentLineIndex = path.length - 1;
+            currentPvIndex = 0;
+            currentLine = {fen, path: [...path], pvs: [{pv:'',score:0}, {pv:'',score:0}, {pv:'',score:0}]};
+            if (nivel === 1) arvore.nivel1.push(currentLine);
+            else if (nivel === 2) arvore.nivel2.push(currentLine);
+            else arvore.nivel3.push(currentLine);
+            engine.postMessage('position fen ' + fen);
+            engine.postMessage('go depth 18');
+        }
+
+        function proximoNivel() {
+            const linhasNivel = currentNivel === 1 ? arvore.nivel1 : currentNivel === 2 ? arvore.nivel2 : null;
+            if (currentPvIndex < 2) {
+                currentPvIndex++;
+                engine.postMessage('go depth 18'); // Reanalisa para pegar próximo MultiPV
+            } else if (currentNivel < 3 && linhasNivel[currentLineIndex].pvs[0].pv) {
+                // Próximo lance do top1 para nível seguinte
+                const nextMove = linhasNivel[currentLineIndex].pvs[0].pv;
+                chess.move(nextMove);
+                const nextFen = chess.fen();
+                analisarNivel(nextFen, currentNivel + 1, [...currentLine.path, nextMove]);
+            } else {
+                mostrarArvore();
+            }
+        }
+
+        function mostrarArvore() {
+            let out = 'ÁRVORE 3-9-27 (centipeões):
+
+NÍVEL 1 (top 3 iniciais):
+';
+            arvore.nivel1.forEach((l, i) => out += `${i+1}. ${l.pvs.map(p => p.score ? `${p.pv}(${p.score})` : '---').join(' | ')}
+`);
+            out += '
+NÍVEL 2 (top 3 após top1 do N1):
+';
+            arvore.nivel2.forEach((l, i) => out += `${i+1}. ${l.pvs.map(p => p.score ? `${p.pv}(${p.score})` : '---').join(' | ')}
+`);
+            out += '
+NÍVEL 3 (top 3 após top1 do N2):
+';
+            arvore.nivel3.forEach((l, i) => out += `${i+1}. ${l.pvs.map(p => p.score ? `${p.pv}(${p.score})` : '---').join(' | ')}
+`;
+            document.getElementById('output').textContent = out;
+            status = 'done';
+        }
+    </script>
+</body>
+</html>
