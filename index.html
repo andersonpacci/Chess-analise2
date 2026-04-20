@@ -6,10 +6,9 @@
   <title>Teste Stockfish</title>
   <style>
     body { font-family: Arial, sans-serif; padding: 12px; }
-    pre, input, button { width: 100%; box-sizing: border-box; font-size: 16px; }
-    input { padding: 10px; margin-bottom: 10px; }
+    button, pre { width: 100%; box-sizing: border-box; font-size: 16px; }
     button { padding: 12px; margin-bottom: 10px; }
-    pre { background: #f4f4f4; padding: 10px; min-height: 180px; white-space: pre-wrap; }
+    pre { background: #f4f4f4; padding: 10px; min-height: 220px; white-space: pre-wrap; }
   </style>
 </head>
 <body>
@@ -19,15 +18,16 @@
   <script>
     const saida = document.getElementById('saida');
     const botao = document.getElementById('testar');
-    const wasmSupported = typeof WebAssembly === 'object' && WebAssembly.validate(Uint8Array.of(0,97,115,109,1,0,0,0));
-    const engine = new Worker(wasmSupported ? 'stockfish.wasm.js' : 'stockfish.js');
 
-    const log = (t) => saida.textContent += '
+    function log(t) {
+      saida.textContent += '
 ' + t;
+    }
+
+    const engine = new Worker('stockfish.js');
 
     engine.onmessage = (e) => {
-      const msg = String(e.data || '');
-      log(msg);
+      log(String(e.data || ''));
     };
 
     engine.onerror = (e) => {
@@ -35,10 +35,11 @@
     };
 
     botao.onclick = () => {
-      saida.textContent = 'Enviando comandos...';
+      saida.textContent = 'Enviando UCI...';
       engine.postMessage('uci');
-      setTimeout(() => engine.postMessage('isready'), 500);
-      setTimeout(() => engine.postMessage('quit'), 1500);
+      setTimeout(() => engine.postMessage('isready'), 300);
+      setTimeout(() => engine.postMessage('position startpos'), 600);
+      setTimeout(() => engine.postMessage('go depth 8'), 900);
     };
   </script>
 </body>
