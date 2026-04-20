@@ -3,109 +3,42 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Chess 3-9-27</title>
+  <title>Teste Stockfish</title>
   <style>
-    body { font-family: Arial, sans-serif; padding: 12px; background: #fff; }
-    input, button, pre { width: 100%; box-sizing: border-box; font-size: 16px; }
+    body { font-family: Arial, sans-serif; padding: 12px; }
+    pre, input, button { width: 100%; box-sizing: border-box; font-size: 16px; }
     input { padding: 10px; margin-bottom: 10px; }
     button { padding: 12px; margin-bottom: 10px; }
-    pre { white-space: pre-wrap; background: #f4f4f4; padding: 10px; min-height: 180px; }
+    pre { background: #f4f4f4; padding: 10px; min-height: 180px; white-space: pre-wrap; }
   </style>
 </head>
 <body>
-  <input id="fen" value="r1bq1b1r/ppp3pp/3k4/3Bp3/3n4/2N2Q2/PPPP1PPP/R1B1K2R w KQ -" />
-  <button id="analisar">Iniciar Análise 3-9-27 (depth 18)</button>
-  <pre id="saida">Inicializando engine...</pre>
+  <button id="testar">Testar engine</button>
+  <pre id="saida">Aguardando...</pre>
 
   <script>
     const saida = document.getElementById('saida');
-    const botao = document.getElementById('analisar');
-    const fenInput = document.getElementById('fen');
-
-    const wasmSupported = typeof WebAssembly === 'object' && WebAssembly.validate(Uint8Array.of(0x0,0x61,0x73,0x6d,0x01,0x00,0x00,0x00));
+    const botao = document.getElementById('testar');
+    const wasmSupported = typeof WebAssembly === 'object' && WebAssembly.validate(Uint8Array.of(0,97,115,109,1,0,0,0));
     const engine = new Worker(wasmSupported ? 'stockfish.wasm.js' : 'stockfish.js');
 
-    let ready = false;
-    let analisando = false;
-    let linhas = [null, null, null];
-
-    function scoreToText(msg) {
-      const mate = msg.match(/score mate (-?d+)/);
-      if (mate) return `#${mate[1]}`;
-      const cp = msg.match(/score cp (-?d+)/);
-      if (cp) return `${cp[1]} cp`;
-      return '?';
-    }
-
-    function pvToText(msg) {
-      const m = msg.match(/\bpv (.+)$/);
-      return m ? m[1].trim() : '';
-    }
-
-    function render() {
-      let out = 'Top 3 candidatos:
-
-';
-      for (let i = 0; i < 3; i++) {
-        const l = linhas[i];
-        if (l) out += `${i + 1}. ${l.move} | ${l.score} | ${l.pv}
-`;
-        else out += `${i + 1}. ---
-`;
-      }
-      saida.textContent = out;
-    }
+    const log = (t) => saida.textContent += '
+' + t;
 
     engine.onmessage = (e) => {
       const msg = String(e.data || '');
-
-      if (msg === 'uciok') {
-        engine.postMessage('setoption name MultiPV value 3');
-        engine.postMessage('isready');
-        return;
-      }
-
-      if (msg === 'readyok') {
-        ready = true;
-        saida.textContent = 'Engine pronta.';
-        return;
-      }
-
-      if (msg.startsWith('info ') && msg.includes(' multipv ')) {
-        const depth = Number((msg.match(/depth (d+)/) || [0, 0])[1]);
-        const mp = Number((msg.match(/multipv (d+)/) || [0, 1])[1]);
-        if (depth >= 18 && mp >= 1 && mp <= 3) {
-          const score = scoreToText(msg);
-          const pv = pvToText(msg);
-          const move = pv.split(' ')[0] || '';
-          if (move) linhas[mp - 1] = { move, score, pv };
-        }
-        return;
-      }
-
-      if (msg.startsWith('bestmove')) {
-        analisando = false;
-        render();
-        return;
-      }
+      log(msg);
     };
 
-    engine.postMessage('uci');
+    engine.onerror = (e) => {
+      log('ERRO: ' + e.message);
+    };
 
     botao.onclick = () => {
-      const fen = fenInput.value.trim();
-      linhas = [null, null, null];
-      if (!ready) {
-        saida.textContent = 'Aguardando engine ficar pronta...';
-        return;
-      }
-      analisando = true;
-      saida.textContent = 'Analisando...';
-      engine.postMessage('position fen ' + fen);
-      engine.postMessage('go depth 18');
-      setTimeout(() => {
-        if (analisando) render();
-      }, 5000);
+      saida.textContent = 'Enviando comandos...';
+      engine.postMessage('uci');
+      setTimeout(() => engine.postMessage('isready'), 500);
+      setTimeout(() => engine.postMessage('quit'), 1500);
     };
   </script>
 </body>
