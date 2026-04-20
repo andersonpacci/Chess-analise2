@@ -15,7 +15,7 @@
 <body>
   <input id="fen" value="r1bq1b1r/ppp3pp/3k4/3Bp3/3n4/2N2Q2/PPPP1PPP/R1B1K2R w KQ -" />
   <button id="analisar">Iniciar Análise 3-9-27 (depth 18)</button>
-  <pre id="saida">Aguardando...</pre>
+  <pre id="saida">Inicializando engine...</pre>
 
   <script>
     const saida = document.getElementById('saida');
@@ -25,8 +25,9 @@
     const wasmSupported = typeof WebAssembly === 'object' && WebAssembly.validate(Uint8Array.of(0x0,0x61,0x73,0x6d,0x01,0x00,0x00,0x00));
     const engine = new Worker(wasmSupported ? 'stockfish.wasm.js' : 'stockfish.js');
 
-    let linhas = [];
-    let pronta = false;
+    let ready = false;
+    let analisando = false;
+    let linhas = [null, null, null];
 
     function scoreToText(msg) {
       const mate = msg.match(/score mate (-?d+)/);
@@ -36,13 +37,12 @@
       return '?';
     }
 
-    function pvToMove(msg) {
+    function pvToText(msg) {
       const m = msg.match(/\bpv (.+)$/);
-      if (!m) return '';
-      return m[1].trim().split(' ')[0] || '';
+      return m ? m[1].trim() : '';
     }
 
-    function mostrar() {
+    function render() {
       let out = 'Top 3 candidatos:
 
 ';
@@ -66,25 +66,27 @@
       }
 
       if (msg === 'readyok') {
-        pronta = true;
+        ready = true;
         saida.textContent = 'Engine pronta.';
         return;
       }
 
       if (msg.startsWith('info ') && msg.includes(' multipv ')) {
         const depth = Number((msg.match(/depth (d+)/) || [0, 0])[1]);
-        if (depth >= 18) {
-          const mv = Number((msg.match(/multipv (d+)/) || [0, 1])[1]);
+        const mp = Number((msg.match(/multipv (d+)/) || [0, 1])[1]);
+        if (depth >= 18 && mp >= 1 && mp <= 3) {
           const score = scoreToText(msg);
-          const pv = msg.match(/\bpv (.+)$/)?.[1]?.trim() || '';
-          const move = pvToMove(msg);
-          if (move) linhas[mv - 1] = { move, score, pv };
+          const pv = pvToText(msg);
+          const move = pv.split(' ')[0] || '';
+          if (move) linhas[mp - 1] = { move, score, pv };
         }
         return;
       }
 
       if (msg.startsWith('bestmove')) {
-        mostrar();
+        analisando = false;
+        render();
+        return;
       }
     };
 
@@ -92,10 +94,18 @@
 
     botao.onclick = () => {
       const fen = fenInput.value.trim();
-      linhas = [];
-      saida.textContent = pronta ? 'Analisando...' : 'Inicializando engine...';
+      linhas = [null, null, null];
+      if (!ready) {
+        saida.textContent = 'Aguardando engine ficar pronta...';
+        return;
+      }
+      analisando = true;
+      saida.textContent = 'Analisando...';
       engine.postMessage('position fen ' + fen);
       engine.postMessage('go depth 18');
+      setTimeout(() => {
+        if (analisando) render();
+      }, 5000);
     };
   </script>
 </body>
